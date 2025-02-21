@@ -7,16 +7,16 @@ import random
 
 # 常量定义
 LOGIN_TIMEOUT = 20000  # 登录等待时间（毫秒）
-PAGE_LOAD_TIMEOUT = 10000  # 页面加载超时时间（毫秒）
-NETWORK_IDLE_TIMEOUT = 10000  # 网络空闲等待时间（毫秒）
+PAGE_LOAD_TIMEOUT = 5000  # 页面加载超时时间（毫秒）
+NETWORK_IDLE_TIMEOUT = 5000  # 网络空闲等待时间（毫秒）
 CLICK_TIMEOUT = 1000  # 点击操作超时时间（毫秒）
 MAX_SUBMIT_RETRIES = 100  # 最大提交重试次数
 SUBMIT_RETRY_INTERVAL = 10  # 提交重试间隔（毫秒）
 CLICK_RETRY_INTERVAL = 500  # 点击重试间隔（毫秒）
 BUY_BUTTON_CHECK_INTERVAL = 500  # 购买按钮检查基础间隔（毫秒）
 MAX_PAGE_LOAD_RETRIES = 3  # 页面加载最大重试次数
-REFRESH_INTERVAL_MIN = 2  # 页面刷新最小间隔（秒）
-REFRESH_INTERVAL_MAX = 3  # 页面刷新最大间隔（秒）
+REFRESH_INTERVAL_MIN = 0.5  # 页面刷新最小间隔（秒）
+REFRESH_INTERVAL_MAX = 1  # 页面刷新最大间隔（秒）
 
 # 配置日志
 logging.basicConfig(
@@ -170,32 +170,13 @@ def main():
                         buy_button = None
                         button_found = False
 
-                        # 方式1：通过文本内容
-                        try:
-                            buy_button = page.get_by_text("立即购买", exact=True)
-                            if buy_button.is_visible(timeout=CLICK_TIMEOUT):
-                                button_found = True
-                                logging.info("通过文本找到购买按钮")
-                        except:
-                            pass
-
-                        # 方式2：通过role和文本
+                        # 方式：通过role和文本
                         if not button_found:
                             try:
                                 buy_button = page.get_by_role("button", name="立即购买")
                                 if buy_button.is_visible(timeout=CLICK_TIMEOUT):
                                     button_found = True
                                     logging.info("通过role找到购买按钮")
-                            except:
-                                pass
-
-                        # 方式3：通过CSS选择器
-                        if not button_found:
-                            try:
-                                buy_button = page.locator("button:has-text('立即购买')")
-                                if buy_button.is_visible(timeout=CLICK_TIMEOUT):
-                                    button_found = True
-                                    logging.info("通过CSS选择器找到购买按钮")
                             except:
                                 pass
 
@@ -226,7 +207,7 @@ def main():
                         submit_button = None
                         button_found = False
 
-                        # 方式1：通过文本内容
+                        # 方式：通过文本内容
                         try:
                             submit_button = page.get_by_text("提交订单", exact=True)
                             if submit_button.is_visible(timeout=CLICK_TIMEOUT):
@@ -234,16 +215,6 @@ def main():
                                 logging.info("通过文本找到提交订单按钮")
                         except:
                             pass
-
-                        # 方式2：通过CSS选择器
-                        if not button_found:
-                            try:
-                                submit_button = page.locator("div.btn--QDjHtErD")
-                                if submit_button.is_visible(timeout=CLICK_TIMEOUT):
-                                    button_found = True
-                                    logging.info("通过CSS选择器找到提交订单按钮")
-                            except:
-                                pass
 
                         if button_found and submit_button:
                             random_sleep()  # 随机等待一下再点击
