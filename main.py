@@ -89,7 +89,6 @@ def wait_until_time(target_time):
         current_time = datetime.datetime.now()
         if current_time >= target_time:
             break
-        time.sleep(0.001)  # 休眠1毫秒，减少CPU使用
 
 def main():
     try:
@@ -159,23 +158,21 @@ def main():
                 logging.info("开始执行抢购...")
                 # 点击结算按钮（带重试机制）
                 settlement_retry_count = 0
-                settlement_success = False
                 while settlement_retry_count < MAX_SETTLEMENT_RETRIES:
                     try:
                         if retry_click(page, "//*[contains(@class, 'btn--QDjHtErD')]"):
                             logging.info("已点击结算按钮")
-                            settlement_success = True
                             break
                         else:
-                            logging.warning(f"未找到结算按钮，重试中... ({settlement_retry_count + 1}/{MAX_SETTLEMENT_RETRIES})")
+                            logging.warning(f"未找到结算按钮，重试中...")
                     except Exception as e:
                         logging.debug(f"结算按钮重试 {settlement_retry_count + 1}/{MAX_SETTLEMENT_RETRIES}: {str(e)}")
-                    settlement_retry_count += 1
-                    random_sleep()
-                    page.wait_for_timeout(SETTLEMENT_RETRY_INTERVAL)
+                        settlement_retry_count += 1
+                        random_sleep()
+                        page.wait_for_timeout(SETTLEMENT_RETRY_INTERVAL)
 
-                if not settlement_success:
-                    raise Exception("点击结算按钮失败，超过最大重试次数")
+                    if settlement_retry_count >= MAX_SETTLEMENT_RETRIES:
+                        raise Exception("点击结算按钮失败，超过最大重试次数")
 
                 # 等待提交订单按钮出现并点击
                 retry_count = 0
