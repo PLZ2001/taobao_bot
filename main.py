@@ -11,12 +11,11 @@ PAGE_LOAD_TIMEOUT = 5000  # 页面加载超时时间（毫秒）
 NETWORK_IDLE_TIMEOUT = 5000  # 网络空闲等待时间（毫秒）
 CLICK_TIMEOUT = 1000  # 点击操作超时时间（毫秒）
 MAX_SUBMIT_RETRIES = 100  # 最大提交重试次数
+MAX_SETTLEMENT_RETRIES = 100  # 最大结算重试次数
 SUBMIT_RETRY_INTERVAL = 10  # 提交重试间隔（毫秒）
+SETTLEMENT_RETRY_INTERVAL = 10  # 结算重试间隔（毫秒）
 CLICK_RETRY_INTERVAL = 500  # 点击重试间隔（毫秒）
-BUY_BUTTON_CHECK_INTERVAL = 500  # 购买按钮检查基础间隔（毫秒）
 MAX_PAGE_LOAD_RETRIES = 3  # 页面加载最大重试次数
-REFRESH_INTERVAL_MIN = 0.5  # 页面刷新最小间隔（秒）
-REFRESH_INTERVAL_MAX = 1  # 页面刷新最大间隔（秒）
 
 # 配置日志
 logging.basicConfig(
@@ -52,12 +51,6 @@ def retry_click(page, selector, max_retries=3, timeout=CLICK_TIMEOUT):
         time.sleep(CLICK_RETRY_INTERVAL / 1000)  # 转换为秒
     return False
 
-def normalize_url(url):
-    """规范化URL"""
-    if not url.startswith(('http://', 'https://')):
-        return 'https://' + url
-    return url
-
 def load_page_with_retry(page, url, max_retries=MAX_PAGE_LOAD_RETRIES):
     """带重试的页面加载"""
     for i in range(max_retries):
@@ -90,18 +83,23 @@ def random_sleep():
     sleep_time = random.uniform(0.1, 0.3)  # 100ms到300ms之间的随机时间
     time.sleep(sleep_time)
 
+def wait_until_time(target_time):
+    """等待直到目标时间"""
+    while True:
+        current_time = datetime.datetime.now()
+        if current_time >= target_time:
+            break
+        time.sleep(0.001)  # 休眠1毫秒，减少CPU使用
+
 def main():
     try:
         start_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
         logging.info(f"程序启动时间: {start_time}")
 
-        login_mode = input("请选择登录方式，0为提前输入密码，其余为自己在运行过程中输入密码,20s内完成输入自己的账号密码")
-        if login_mode == '0':
-            username = input("请输入账号")
-            password = input("请输入密码")
-
-        target_url = normalize_url(input("请输入目标网址"))
-        logging.info(f"目标网址: {target_url}")
+        # 获取目标时间
+        target_time_str = input("请输入目标时间（格式：2024-02-23 12:00:00）：")
+        target_time = datetime.datetime.strptime(target_time_str, '%Y-%m-%d %H:%M:%S')
+        logging.info(f"目标时间: {target_time_str}")
 
         with sync_playwright() as p:
             try:
@@ -139,86 +137,51 @@ def main():
                 if not retry_click(page, "text=亲，请登录"):
                     raise Exception("无法找到登录按钮")
 
-                if login_mode == '0':
-                    logging.info("开始自动登录...")
-                    try:
-                        page.fill("input[placeholder='会员名/邮箱/手机号']", username)
-                        page.fill("input[placeholder='请输入登录密码']", password)
-                        retry_click(page, "button.fm-button.fm-submit.password-login")
-                        page.wait_for_timeout(2000)
-                    except Exception as e:
-                        logging.error(f"自动登录失败: {str(e)}")
-                        logging.info("切换到手动登录模式...")
-                        page.wait_for_timeout(LOGIN_TIMEOUT)
-                else:
-                    logging.info("等待手动登录...")
-                    page.wait_for_timeout(LOGIN_TIMEOUT)
+                logging.info("等待手动登录...")
+                page.wait_for_timeout(LOGIN_TIMEOUT)
 
                 # 检查登录状态
                 if not page.locator(".site-nav-login-info-nick").is_visible(timeout=PAGE_LOAD_TIMEOUT):
                     raise Exception("登录失败或超时")
 
-                logging.info("登录成功，正在跳转商品页面...")
-                if not load_page_with_retry(page, target_url):
-                    raise Exception("商品页面加载失败")
+                logging.info("登录成功，正在跳转购物车页面...")
+                if not load_page_with_retry(page, "https://cart.taobao.com/cart.htm"):
+                    raise Exception("购物车页面加载失败")
+                
+                # # 点击全选按钮
+                # if not retry_click(page, "//*[contains(@class, 'cartOperationCheckbox--CIlk23mK')]/span[1]/input[1]"):
+                #     raise Exception("点击全选按钮失败")
+                # logging.info("已点击全选按钮")
 
-                logging.info("开始监控购买按钮...")
-                last_refresh_time = time.time()
-                while True:
+                logging.info("等待目标时间...")
+                wait_until_time(target_time)
+
+                logging.info("开始执行抢购...")
+                # 点击结算按钮（带重试机制）
+                settlement_retry_count = 0
+                settlement_success = False
+                while settlement_retry_count < MAX_SETTLEMENT_RETRIES:
                     try:
-                        # 尝试多种方式定位购买按钮
-                        buy_button = None
-                        button_found = False
-
-                        # 方式：通过role和文本
-                        if not button_found:
-                            try:
-                                buy_button = page.get_by_role("button", name="立即购买")
-                                if buy_button.is_visible(timeout=CLICK_TIMEOUT):
-                                    button_found = True
-                                    logging.info("通过role找到购买按钮")
-                            except:
-                                pass
-
-                        if button_found and buy_button:
-                            random_sleep()  # 随机等待一下再点击
-                            buy_button.click()
-                            logging.info("已点击购买按钮")
+                        if retry_click(page, "//*[contains(@class, 'btn--QDjHtErD')]"):
+                            logging.info("已点击结算按钮")
+                            settlement_success = True
                             break
-                            
-                        # 控制刷新频率
-                        current_time = time.time()
-                        if current_time - last_refresh_time >= random.uniform(REFRESH_INTERVAL_MIN, REFRESH_INTERVAL_MAX):
-                            page.reload()
-                            last_refresh_time = current_time
-                            logging.info("页面刷新")
-                        
-                        random_sleep()  # 随机等待时间
-                        
+                        else:
+                            logging.warning(f"未找到结算按钮，重试中... ({settlement_retry_count + 1}/{MAX_SETTLEMENT_RETRIES})")
                     except Exception as e:
-                        logging.debug(f"等待购买按钮: {str(e)}")
-                        page.wait_for_timeout(BUY_BUTTON_CHECK_INTERVAL)
+                        logging.debug(f"结算按钮重试 {settlement_retry_count + 1}/{MAX_SETTLEMENT_RETRIES}: {str(e)}")
+                    settlement_retry_count += 1
+                    random_sleep()
+                    page.wait_for_timeout(SETTLEMENT_RETRY_INTERVAL)
 
-                logging.info("正在提交订单...")
+                if not settlement_success:
+                    raise Exception("点击结算按钮失败，超过最大重试次数")
+
+                # 等待提交订单按钮出现并点击
                 retry_count = 0
                 while retry_count < MAX_SUBMIT_RETRIES:
                     try:
-                        # 尝试多种方式定位提交订单按钮
-                        submit_button = None
-                        button_found = False
-
-                        # 方式：通过文本内容
-                        try:
-                            submit_button = page.get_by_text("提交订单", exact=True)
-                            if submit_button.is_visible(timeout=CLICK_TIMEOUT):
-                                button_found = True
-                                logging.info("通过文本找到提交订单按钮")
-                        except:
-                            pass
-
-                        if button_found and submit_button:
-                            random_sleep()  # 随机等待一下再点击
-                            submit_button.click()
+                        if retry_click(page, "//*[contains(@class, 'btn--QDjHtErD')]"):
                             logging.info("抢购成功，请尽快付款！")
                             # 保持程序运行，等待用户付款
                             while True:
@@ -228,7 +191,7 @@ def main():
                     except Exception as e:
                         logging.debug(f"提交订单重试 {retry_count + 1}/{MAX_SUBMIT_RETRIES}: {str(e)}")
                         retry_count += 1
-                        random_sleep()  # 随机等待时间
+                        random_sleep()
                         page.wait_for_timeout(SUBMIT_RETRY_INTERVAL)
 
                     if retry_count >= MAX_SUBMIT_RETRIES:
